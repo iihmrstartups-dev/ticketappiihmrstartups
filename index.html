@@ -7,13 +7,13 @@
 
   <!-- =============================================================
        EXTERNAL LIBRARIES
-       - html5-qrcode: handles camera access + QR decoding cross-browser
-       - PapaParse: parses Google Sheet CSV reliably (handles quoted fields, commas in values, etc.)
+       - html5-qrcode: camera access + QR decoding cross-browser
+       - PapaParse: parses Google Sheet CSV reliably
        ============================================================= -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
-  <!-- Typography: Plus Jakarta Sans for UI, JetBrains Mono for serial numbers / data -->
+  <!-- Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -30,7 +30,6 @@
       --ink-muted: #94a3b8;
       --line: #e2e8f0;
 
-      /* Brand: light blue accent as specified */
       --accent: #2563eb;
       --accent-soft: #dbeafe;
       --accent-border: #93c5fd;
@@ -78,7 +77,6 @@
       margin: 0 auto;
       padding: 48px 24px 80px;
     }
-
     @media (max-width: 600px) {
       .page { padding: 28px 16px 60px; }
     }
@@ -124,7 +122,7 @@
     }
 
     /* =============================================================
-       CARD (Code Scanner panel)
+       CARD
        ============================================================= */
     .card {
       background: #fff;
@@ -141,6 +139,7 @@
       padding: 16px 20px;
       background: var(--accent-soft);
       border-bottom: 1px solid var(--accent-border);
+      flex-wrap: wrap;
     }
     .card__title {
       display: flex;
@@ -151,15 +150,13 @@
       color: var(--ink);
     }
     .card__title svg { color: var(--accent); }
-    .card__body {
-      padding: 24px;
-    }
+    .card__body { padding: 24px; }
     @media (max-width: 600px) {
       .card__body { padding: 16px; }
     }
 
     /* =============================================================
-       CONTROLS ROW
+       CONTROLS
        ============================================================= */
     .controls {
       display: grid;
@@ -170,12 +167,7 @@
     @media (max-width: 600px) {
       .controls { grid-template-columns: 1fr; }
     }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
     .field__label {
       font-size: 12px;
       font-weight: 600;
@@ -201,7 +193,6 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
-
     .btn-primary {
       background: var(--accent);
       color: #fff;
@@ -220,12 +211,14 @@
       background: var(--danger-soft);
       border-color: var(--danger);
     }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Toggle for continuous scanning */
+    .toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-top: 4px;
+    }
     .toggle {
       display: inline-flex;
       align-items: center;
@@ -233,7 +226,6 @@
       font-size: 13px;
       color: var(--ink-soft);
       font-weight: 500;
-      margin-top: 4px;
       user-select: none;
       cursor: pointer;
     }
@@ -241,6 +233,14 @@
 
     /* =============================================================
        CAMERA / READER AREA
+       The html5-qrcode library renders:
+         #reader
+           └── #reader__scan_region    (contains the <video>)
+                 └── #qr-shaded-region (the OUTER overlay frame with cut-out box)
+                       └── 4× absolutely-positioned corner-marker divs
+       We style #qr-shaded-region directly so the corner markers
+       go white (scanning) → green (found) → red (not found).
+       NOTE: there is NO custom inner reticle. This is the only frame.
        ============================================================= */
     .reader-wrap {
       position: relative;
@@ -259,14 +259,12 @@
       inset: 0;
       width: 100%;
       height: 100%;
-      z-index: 2;            /* sit above the empty-state overlay */
+      z-index: 2;
       background: transparent;
     }
-
-    /* Library wrapper divs — force them to fill the box too */
     #reader > div { width: 100% !important; height: 100% !important; }
 
-    /* Hide the library's default UI we don't want */
+    /* Hide all the library's default chrome we don't want */
     #reader__dashboard_section_csr,
     #reader__dashboard_section_swaplink,
     #reader__status_span,
@@ -275,7 +273,6 @@
       display: none !important;
     }
 
-    /* Ensure the video fills the box */
     #reader video {
       width: 100% !important;
       height: 100% !important;
@@ -287,7 +284,26 @@
       min-height: 100% !important;
     }
 
-    /* Empty state shown when camera is off */
+    /* ---------- THE OUTER SCAN FRAME ----------
+       The library renders its corner markers as four <div>s inside
+       #qr-shaded-region. Their default colour is green/lime. We override
+       to white by default and switch to green/red based on data-status
+       on the reader-wrap. */
+    #reader__scan_region #qr-shaded-region > div {
+      background: #ffffff !important;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .reader-wrap[data-status="success"] #reader__scan_region #qr-shaded-region > div {
+      background: #22c55e !important;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+    }
+    .reader-wrap[data-status="error"] #reader__scan_region #qr-shaded-region > div {
+      background: #ef4444 !important;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+    }
+
+    /* Empty state when camera is off */
     .reader-empty {
       position: absolute;
       inset: 0;
@@ -305,93 +321,6 @@
     .reader-empty svg {
       width: 48px; height: 48px;
       opacity: 0.5;
-    }
-
-    /* Scanning reticle overlay with corner markers */
-    .reticle {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 60%;
-      aspect-ratio: 1 / 1;
-      pointer-events: none;
-      display: none;
-      z-index: 3;
-    }
-    .reticle.active { display: block; }
-    .reticle__corner {
-      position: absolute;
-      width: 28px; height: 28px;
-      border-color: #fff;
-      border-style: solid;
-      border-width: 0;
-    }
-    .reticle__corner--tl { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 6px; }
-    .reticle__corner--tr { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 6px; }
-    .reticle__corner--bl { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 6px; }
-    .reticle__corner--br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 6px; }
-    .reticle__scanline {
-      position: absolute;
-      left: 8%; right: 8%;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      box-shadow: 0 0 12px var(--accent);
-      top: 0;
-      animation: scan 2.4s ease-in-out infinite;
-    }
-    @keyframes scan {
-      0%   { top: 8%; opacity: 0.4; }
-      50%  { top: 92%; opacity: 1; }
-      100% { top: 8%; opacity: 0.4; }
-    }
-
-    /* =============================================================
-       FEEDBACK STATES — colour the reticle GREEN on match, RED on no-match.
-       These classes are applied to the .reticle element after each scan.
-       ============================================================= */
-    .reticle.feedback--success .reticle__corner {
-      border-color: #22c55e;
-      box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
-    }
-    .reticle.feedback--success .reticle__scanline {
-      background: linear-gradient(90deg, transparent, #22c55e, transparent);
-      box-shadow: 0 0 12px #22c55e;
-    }
-    .reticle.feedback--error .reticle__corner {
-      border-color: #ef4444;
-      box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
-    }
-    .reticle.feedback--error .reticle__scanline {
-      background: linear-gradient(90deg, transparent, #ef4444, transparent);
-      box-shadow: 0 0 12px #ef4444;
-      animation: scan 0.6s ease-in-out 3;  /* faster blink on error */
-    }
-
-    /* Full-frame flash overlay — gives a strong, momentary colour cue
-       across the whole camera view. Sits inside .reader-wrap. */
-    .frame-flash {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      opacity: 0;
-      z-index: 4;
-      border-radius: var(--radius-sm);
-      transition: opacity 0.15s ease-out;
-    }
-    .frame-flash.flash--success {
-      background: radial-gradient(circle at center, rgba(34, 197, 94, 0.35), rgba(34, 197, 94, 0.05));
-      box-shadow: inset 0 0 0 4px #22c55e, inset 0 0 40px rgba(34, 197, 94, 0.4);
-      animation: flashFade 1.2s ease-out forwards;
-    }
-    .frame-flash.flash--error {
-      background: radial-gradient(circle at center, rgba(239, 68, 68, 0.35), rgba(239, 68, 68, 0.05));
-      box-shadow: inset 0 0 0 4px #ef4444, inset 0 0 40px rgba(239, 68, 68, 0.4);
-      animation: flashFade 1.2s ease-out forwards;
-    }
-    @keyframes flashFade {
-      0%   { opacity: 0; }
-      15%  { opacity: 1; }
-      100% { opacity: 0; }
     }
 
     /* Status pill (top-right of camera frame) */
@@ -422,12 +351,35 @@
       50% { opacity: 0.4; transform: scale(0.85); }
     }
 
+    /* Full-frame flash on success/error */
+    .frame-flash {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 4;
+      border-radius: var(--radius-sm);
+    }
+    .frame-flash.flash--success {
+      background: radial-gradient(circle at center, rgba(34, 197, 94, 0.35), rgba(34, 197, 94, 0.05));
+      box-shadow: inset 0 0 0 4px #22c55e, inset 0 0 40px rgba(34, 197, 94, 0.4);
+      animation: flashFade 1.2s ease-out forwards;
+    }
+    .frame-flash.flash--error {
+      background: radial-gradient(circle at center, rgba(239, 68, 68, 0.35), rgba(239, 68, 68, 0.05));
+      box-shadow: inset 0 0 0 4px #ef4444, inset 0 0 40px rgba(239, 68, 68, 0.4);
+      animation: flashFade 1.2s ease-out forwards;
+    }
+    @keyframes flashFade {
+      0%   { opacity: 0; }
+      15%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
     /* =============================================================
        RESULT MESSAGES + TABLE
        ============================================================= */
-    .result-area {
-      margin-top: 24px;
-    }
+    .result-area { margin-top: 24px; }
     .message {
       padding: 14px 16px;
       border-radius: var(--radius-sm);
@@ -458,7 +410,6 @@
       color: var(--warn);
       border: 1px solid #fcd34d;
     }
-
     .scanned-value {
       font-family: var(--font-mono);
       font-size: 13px;
@@ -466,8 +417,8 @@
       padding: 2px 8px;
       border-radius: 4px;
       margin-left: 6px;
+      word-break: break-all;
     }
-
     .result-table-wrap {
       overflow-x: auto;
       border: 1px solid var(--line);
@@ -509,7 +460,7 @@
     }
 
     /* =============================================================
-       SETUP / FOOTER NOTES
+       DEBUG / SETUP NOTES
        ============================================================= */
     .setup-note {
       margin-top: 24px;
@@ -526,16 +477,6 @@
       font-weight: 600;
       color: var(--ink);
     }
-    .setup-note ol { padding-left: 20px; margin: 12px 0 0; }
-    .setup-note li { margin-bottom: 6px; }
-    .setup-note code {
-      font-family: var(--font-mono);
-      background: #fff;
-      border: 1px solid var(--line);
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-size: 12px;
-    }
 
     .config-bar {
       display: flex;
@@ -543,7 +484,6 @@
       gap: 8px;
       font-size: 12px;
       color: var(--ink-muted);
-      margin-top: 12px;
       flex-wrap: wrap;
     }
     .config-bar__dot {
@@ -559,18 +499,12 @@
 
   <main class="page">
 
-    <!-- =========================================================
-         HEADER
-         ========================================================= -->
     <header class="header">
       <span class="header__eyebrow">TEDxIIHMRU</span>
       <h1>Data Validator with QR Code</h1>
       <p>Made by IIHMR Startups</p>
     </header>
 
-    <!-- =========================================================
-         CODE SCANNER CARD
-         ========================================================= -->
     <section class="card" aria-label="Code Scanner">
       <div class="card__header">
         <div class="card__title">
@@ -590,7 +524,6 @@
 
       <div class="card__body">
 
-        <!-- Controls: camera select + start/stop -->
         <div class="controls">
           <div class="field">
             <label class="field__label" for="cameraSelect">Select Camera</label>
@@ -608,16 +541,21 @@
           </div>
         </div>
 
-        <label class="toggle">
-          <input type="checkbox" id="continuousToggle" />
-          Continuous scanning (don't auto-stop after a match)
-        </label>
+        <div class="toggles">
+          <label class="toggle">
+            <input type="checkbox" id="continuousToggle" />
+            Continuous scanning (don't auto-stop after a match)
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="soundToggle" checked />
+            Sound feedback
+          </label>
+        </div>
 
         <!-- Camera reader -->
-        <div class="reader-wrap" style="margin-top: 18px;">
+        <div class="reader-wrap" id="readerWrap" style="margin-top: 18px;">
           <div id="reader"></div>
 
-          <!-- Empty-state placeholder when off -->
           <div class="reader-empty" id="readerEmpty">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -626,33 +564,19 @@
             <div>Camera is off. Click <strong>Start Scanning</strong> to begin.</div>
           </div>
 
-          <!-- Reticle overlay -->
-          <div class="reticle" id="reticle">
-            <span class="reticle__corner reticle__corner--tl"></span>
-            <span class="reticle__corner reticle__corner--tr"></span>
-            <span class="reticle__corner reticle__corner--bl"></span>
-            <span class="reticle__corner reticle__corner--br"></span>
-            <span class="reticle__scanline"></span>
-          </div>
-
-          <!-- Top-right status pill -->
           <div class="status-pill" id="statusPill">
             <span class="status-pill__dot"></span>
             <span>Scanning</span>
           </div>
 
-          <!-- Frame flash overlay — animates green on match, red on no-match -->
+          <!-- Frame flash overlay (green on match, red on no-match) -->
           <div class="frame-flash" id="frameFlash"></div>
         </div>
 
-        <!-- =====================================================
-             RESULT AREA  ← THE MISSING DIV (this is the fix)
-             Result messages and the matched-record table render here.
-             ===================================================== -->
+        <!-- Result messages + matched-record table -->
         <div class="result-area" id="resultArea" aria-live="polite"></div>
 
-        <!-- Debug panel: shows exactly what happens during the sheet fetch -->
-        <details class="setup-note" id="debugPanel" open>
+        <details class="setup-note" id="debugPanel">
           <summary>🔍 Debug log (sheet connection)</summary>
           <pre id="debugLog" style="margin:10px 0 0;padding:12px;background:#0f172a;color:#a7f3d0;border-radius:6px;font-family:var(--font-mono);font-size:11px;line-height:1.5;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow-y:auto;"></pre>
         </details>
@@ -660,27 +584,13 @@
     </section>
   </main>
 
-  <!-- =============================================================
-       SCRIPT
-       ============================================================= -->
   <script>
   // ===============================================================
-  // CONFIGURATION — edit these two constants to connect your sheet
+  // CONFIGURATION
   // ===============================================================
-
-  // 1) Paste the "Publish to web" CSV URL of your Google Sheet here.
-  //    File → Share → Publish to web → CSV format → Publish → copy link.
-  //    Leave the demo URL in place to try the app with sample data.
-  // NOTE: a valid published-CSV URL ALWAYS contains "2PACX-1v" with a hyphen.
-  // If your URL has "2PACX1v" (no hyphen) it was mistyped — re-copy it from Google.
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWovc_6HzdQGtVFwCeJAXlvPtfiyx0sZN3IRzch5rbXJ-dP1d2QnuFNDd1UMfqiCD_qzALmNW9Bxms/pub?gid=0&single=true&output=csv";
-
-  // 2) The header name of the column that holds serial numbers
-  //    (must match the spelling/case in row 1 of your sheet exactly).
   const SERIAL_COLUMN = "Serial No.";
 
-  // 3) Optional: fallback demo data used when SHEET_CSV_URL is not configured
-  //    or fails to load. Remove or replace as you wish.
   const DEMO_DATA = [
     { "Serial No.": "SN-1001", "Name": "Aarav Sharma",   "DataD": "Batch A", "DataF": "2026-03-12", "DataG": "Verified" },
     { "Serial No.": "SN-1002", "Name": "Priya Verma",    "DataD": "Batch A", "DataF": "2026-03-12", "DataG": "Verified" },
@@ -692,9 +602,9 @@
   // ===============================================================
   // STATE
   // ===============================================================
-  let sheetData = [];          // Array of row objects from the sheet
-  let sheetColumns = [];       // Array of column header names, in order
-  let html5QrCode = null;      // html5-qrcode instance
+  let sheetData = [];
+  let sheetColumns = [];
+  let html5QrCode = null;
   let isScanning = false;
   let usingDemoData = false;
 
@@ -706,9 +616,10 @@
     startBtn:        document.getElementById('startBtn'),
     stopBtn:         document.getElementById('stopBtn'),
     continuousTgl:   document.getElementById('continuousToggle'),
+    soundTgl:        document.getElementById('soundToggle'),
     reader:          document.getElementById('reader'),
+    readerWrap:      document.getElementById('readerWrap'),
     readerEmpty:     document.getElementById('readerEmpty'),
-    reticle:         document.getElementById('reticle'),
     statusPill:      document.getElementById('statusPill'),
     frameFlash:      document.getElementById('frameFlash'),
     resultArea:      document.getElementById('resultArea'),
@@ -716,41 +627,91 @@
     sheetStatusText: document.getElementById('sheetStatusText'),
   };
 
-  // Defensive helper — never crash if resultArea (or any future
-  // optional container) is missing from the DOM.
   function setResultHTML(html) {
-    if (els.resultArea) {
-      els.resultArea.innerHTML = html;
+    if (els.resultArea) els.resultArea.innerHTML = html;
+  }
+
+  // ===============================================================
+  // FRAME STATE — controls the colour of the outer scan frame.
+  // We set data-status on .reader-wrap; CSS does the rest.
+  //   ''        → white (default while scanning)
+  //   'success' → green
+  //   'error'   → red
+  // ===============================================================
+  function setFrameStatus(status) {
+    if (!els.readerWrap) return;
+    if (status) {
+      els.readerWrap.setAttribute('data-status', status);
     } else {
-      console.warn('resultArea element is missing from the DOM.');
+      els.readerWrap.removeAttribute('data-status');
     }
   }
 
-  // Visual feedback on the camera frame: colour the reticle + flash overlay.
-  // kind: 'success' (green) or 'error' (red). Auto-clears after the animation.
-  function showFrameFeedback(kind) {
-    // 1) Tint the reticle corners + scanline
-    if (els.reticle) {
-      els.reticle.classList.remove('feedback--success', 'feedback--error');
-      // Force a reflow so re-adding the same class re-triggers any animation
-      void els.reticle.offsetWidth;
-      els.reticle.classList.add('feedback--' + kind);
-    }
+  function flashFrame(kind) {
+    // 1) Persistent corner colour change
+    setFrameStatus(kind);
 
-    // 2) Run the full-frame flash overlay
+    // 2) Full-frame flash animation
     if (els.frameFlash) {
       els.frameFlash.classList.remove('flash--success', 'flash--error');
-      void els.frameFlash.offsetWidth;
+      void els.frameFlash.offsetWidth;  // force reflow so animation restarts
       els.frameFlash.classList.add('flash--' + kind);
     }
 
-    // 3) Clear feedback colours after the flash so the reticle returns to white
-    //    for the next scan attempt (only matters in continuous mode).
-    clearTimeout(showFrameFeedback._t);
-    showFrameFeedback._t = setTimeout(() => {
-      if (els.reticle) els.reticle.classList.remove('feedback--success', 'feedback--error');
+    // 3) Reset to white after a moment (continuous mode benefit)
+    clearTimeout(flashFrame._t);
+    flashFrame._t = setTimeout(() => {
+      setFrameStatus('');
       if (els.frameFlash) els.frameFlash.classList.remove('flash--success', 'flash--error');
     }, 1300);
+  }
+
+  // ===============================================================
+  // AUDIO FEEDBACK (Web Audio API — no audio files needed)
+  // ===============================================================
+  let _audioCtx = null;
+  function getAudioContext() {
+    if (!_audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      _audioCtx = new Ctx();
+    }
+    if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+    return _audioCtx;
+  }
+
+  function playTone(frequency, durationMs, startOffsetMs = 0, volume = 0.18, type = 'sine') {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const start = ctx.currentTime + startOffsetMs / 1000;
+    const dur = durationMs / 1000;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, start);
+
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(volume, start + 0.015);
+    gain.gain.setValueAtTime(volume, start + Math.max(0, dur - 0.06));
+    gain.gain.linearRampToValueAtTime(0, start + dur);
+
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  }
+
+  function playFeedbackSound(kind) {
+    if (els.soundTgl && !els.soundTgl.checked) return;
+    if (kind === 'success') {
+      // Pleasant rising chime A5 → E6
+      playTone(880, 120, 0);
+      playTone(1318.5, 180, 110);
+    } else {
+      // Lower buzzy "wrong" sound
+      playTone(220, 160, 0,   0.20, 'square');
+      playTone(165, 240, 150, 0.20, 'square');
+    }
   }
 
   // ===============================================================
@@ -760,14 +721,6 @@
     setSheetStatus('loading', 'Connecting to data source…');
     debugLog('Fetching: ' + SHEET_CSV_URL);
 
-    // If user hasn't replaced the demo URL, skip the fetch and use demo data
-    if (SHEET_CSV_URL.includes('DEMO_REPLACE_ME')) {
-      useDemoData('Using built-in demo data (configure SHEET_CSV_URL to use your sheet).');
-      return;
-    }
-
-    // We fetch manually (instead of letting Papa download) so we can see the real HTTP status
-    // and the first bytes of the response when something goes wrong.
     try {
       const res = await fetch(SHEET_CSV_URL, { redirect: 'follow' });
       debugLog('HTTP status: ' + res.status + ' ' + res.statusText);
@@ -775,7 +728,6 @@
       debugLog('Content-Type: ' + (res.headers.get('content-type') || '(none)'));
 
       if (!res.ok) {
-        debugLog('Response not OK. Body preview follows.');
         const body = await res.text();
         debugLog('Body (first 400 chars): ' + body.slice(0, 400));
         throw new Error('HTTP ' + res.status);
@@ -785,8 +737,6 @@
       debugLog('Got ' + csvText.length + ' chars of CSV. First 200 chars:');
       debugLog(csvText.slice(0, 200));
 
-      // If the response is HTML instead of CSV, Google is serving an error/login page.
-      // That typically means the sheet isn't actually published — only shared.
       const trimmed = csvText.trimStart().slice(0, 20).toLowerCase();
       if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
         debugLog('⚠ Response is HTML, not CSV. The sheet is probably NOT published to web.');
@@ -794,7 +744,6 @@
       }
 
       const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-
       if (results.errors && results.errors.length) {
         debugLog('Papa parse warnings: ' + JSON.stringify(results.errors.slice(0, 3)));
       }
@@ -809,7 +758,6 @@
       setSheetStatus('ok', `Loaded ${sheetData.length} records from sheet`);
       debugLog('✔ Columns detected: ' + sheetColumns.join(', '));
 
-      // Helpful: warn if the configured serial column doesn't exist in the sheet
       if (!sheetColumns.includes(SERIAL_COLUMN)) {
         debugLog('⚠ SERIAL_COLUMN "' + SERIAL_COLUMN + '" not found in sheet headers. ' +
                  'Edit SERIAL_COLUMN in the script to match one of: ' + sheetColumns.join(', '));
@@ -858,28 +806,22 @@
     try {
       const devices = await Html5Qrcode.getCameras();
       els.cameraSelect.innerHTML = '';
-
       if (!devices || devices.length === 0) {
         els.cameraSelect.innerHTML = '<option value="">— No cameras detected —</option>';
         els.startBtn.disabled = true;
         return;
       }
-
       devices.forEach((d, i) => {
         const opt = document.createElement('option');
         opt.value = d.id;
         opt.textContent = d.label || `Camera ${i + 1}`;
         els.cameraSelect.appendChild(opt);
       });
-
-      // Prefer back/environment camera on mobile if available
       const back = devices.find(d => /back|rear|environment/i.test(d.label));
       if (back) els.cameraSelect.value = back.id;
-
       els.startBtn.disabled = false;
     } catch (err) {
       console.warn('Camera enumeration failed:', err);
-      // Permissions probably not granted yet — that's okay, we'll request on Start
       els.cameraSelect.innerHTML = '<option value="">— Grant camera permission to list —</option>';
     }
   }
@@ -890,12 +832,11 @@
   async function startScanning() {
     if (isScanning) return;
     clearResult();
+    setFrameStatus('');  // reset to white
 
-    // If we don't yet have cameras enumerated (permission not granted), ask now
     let cameraId = els.cameraSelect.value;
     if (!cameraId) {
       try {
-        // Triggers the permission prompt
         await navigator.mediaDevices.getUserMedia({ video: true });
         await populateCameras();
         cameraId = els.cameraSelect.value;
@@ -904,7 +845,6 @@
         return;
       }
     }
-
     if (!cameraId) {
       showPermissionError('No camera available on this device.');
       return;
@@ -923,21 +863,18 @@
     };
 
     try {
-      await html5QrCode.start(
-        cameraId,
-        config,
-        onScanSuccess,
-        onScanFailure  // silent — fires constantly while no code is in view
-      );
+      await html5QrCode.start(cameraId, config, onScanSuccess, onScanFailure);
       isScanning = true;
       els.readerEmpty.style.display = 'none';
-      els.reticle.classList.remove('feedback--success', 'feedback--error');
-      els.reticle.classList.add('active');
-      if (els.frameFlash) els.frameFlash.classList.remove('flash--success', 'flash--error');
       els.statusPill.classList.add('active');
+      setFrameStatus('');  // ensure white at start
+      if (els.frameFlash) els.frameFlash.classList.remove('flash--success', 'flash--error');
       els.startBtn.disabled = true;
       els.stopBtn.disabled = false;
       els.cameraSelect.disabled = true;
+
+      // Wake the audio context so the first scan plays without delay
+      getAudioContext();
     } catch (err) {
       console.error('Failed to start scanner:', err);
       showPermissionError(err && err.message ? err.message : 'Could not start the camera.');
@@ -955,8 +892,8 @@
     html5QrCode = null;
     isScanning = false;
     els.readerEmpty.style.display = 'flex';
-    els.reticle.classList.remove('active');
     els.statusPill.classList.remove('active');
+    setFrameStatus('');
     els.startBtn.disabled = false;
     els.stopBtn.disabled = true;
     els.cameraSelect.disabled = false;
@@ -965,19 +902,13 @@
   // ===============================================================
   // 4. SCAN CALLBACKS + VALIDATION
   // ===============================================================
-  function onScanSuccess(decodedText, decodedResult) {
-    // Auto-stop unless user toggled continuous mode
+  function onScanSuccess(decodedText) {
     const continuous = els.continuousTgl.checked;
-    if (!continuous) {
-      stopScanning();
-    }
+    if (!continuous) stopScanning();
     validateAgainstSheet(decodedText.trim());
   }
 
-  function onScanFailure(err) {
-    // Spec requires we silently keep scanning on invalid/unreadable frames.
-    // No-op intentionally.
-  }
+  function onScanFailure() { /* silent */ }
 
   function normalize(v) {
     return (v == null ? '' : String(v)).trim().toLowerCase();
@@ -988,15 +919,10 @@
       renderMessage('error', 'No sheet data loaded yet — cannot validate.');
       return;
     }
-
     const target = normalize(scannedValue);
     const match = sheetData.find(row => normalize(row[SERIAL_COLUMN]) === target);
-
-    if (match) {
-      renderMatch(scannedValue, match);
-    } else {
-      renderNotFound(scannedValue);
-    }
+    if (match) renderMatch(scannedValue, match);
+    else renderNotFound(scannedValue);
   }
 
   // ===============================================================
@@ -1016,20 +942,10 @@
     `);
   }
 
-  function renderNotFound(scannedValue) {
-    showFrameFeedback('error');  // red flash + red reticle
-    setResultHTML(`
-      <div class="message message--error">
-        <span>⛔</span>
-        <span>Record Not Found <span class="scanned-value">${escapeHtml(scannedValue)}</span></span>
-      </div>
-    `);
-  }
-
   function renderMatch(scannedValue, row) {
-    showFrameFeedback('success');  // green flash + green reticle
+    flashFrame('success');
+    playFeedbackSound('success');
 
-    // Build a key/value table of every column for the matched row
     const rows = sheetColumns.map(col => `
       <tr>
         <td class="field-name">${escapeHtml(col)}</td>
@@ -1044,11 +960,21 @@
       </div>
       <div class="result-table-wrap">
         <table class="result">
-          <thead>
-            <tr><th>Field</th><th>Value</th></tr>
-          </thead>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+    `);
+  }
+
+  function renderNotFound(scannedValue) {
+    flashFrame('error');
+    playFeedbackSound('error');
+
+    setResultHTML(`
+      <div class="message message--error">
+        <span>⛔</span>
+        <span>Record Not Found <span class="scanned-value">${escapeHtml(scannedValue)}</span></span>
       </div>
     `);
   }
@@ -1072,7 +998,6 @@
       .replace(/'/g, '&#39;');
   }
 
-  // Append a line to the on-page debug panel + console
   function debugLog(msg) {
     const el = document.getElementById('debugLog');
     if (el) {
@@ -1089,7 +1014,6 @@
   els.startBtn.addEventListener('click', startScanning);
   els.stopBtn.addEventListener('click', stopScanning);
 
-  // Switching cameras while scanning: stop then restart with new device
   els.cameraSelect.addEventListener('change', async () => {
     if (isScanning) {
       await stopScanning();
@@ -1097,14 +1021,12 @@
     }
   });
 
-  // Clean up if user navigates away
   window.addEventListener('beforeunload', () => {
     if (isScanning && html5QrCode) {
       html5QrCode.stop().catch(() => {});
     }
   });
 
-  // Boot
   loadSheetData();
   populateCameras();
   </script>
