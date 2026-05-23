@@ -593,26 +593,7 @@
           </div>
         </div>
 
-        <!-- =====================================================
-             RESULT AREA
-             ===================================================== -->
-        <div class="result-area" id="resultArea" aria-live="polite"></div>
-
-        <!-- Setup instructions (collapsible) -->
-        <details class="setup-note">
-          <summary>How to connect a Google Sheet (setup guide)</summary>
-          <p style="margin-top:10px;">This app reads data from a Google Sheet published to the web as CSV — no API key required.</p>
-          <ol>
-            <li>Open your Google Sheet. Make sure column headers are in <strong>row 1</strong> (e.g. <code>Serial No.</code>, <code>Name</code>, <code>DataD</code>, <code>DataF</code>, <code>DataG</code>).</li>
-            <li>Go to <strong>File → Share → Publish to web</strong>.</li>
-            <li>Choose the correct sheet/tab and format <strong>Comma-separated values (.csv)</strong>, then click <strong>Publish</strong>.</li>
-            <li>Copy the URL it gives you and paste it into the <code>SHEET_CSV_URL</code> constant near the top of the &lt;script&gt; block in this file.</li>
-            <li>Set <code>SERIAL_COLUMN</code> to the exact header name of your serial-number column (default: <code>Serial No.</code>).</li>
-            <li>Reload the page. The scanner will match the QR's decoded text against that column.</li>
-          </ol>
-          <p style="margin-top:10px;"><strong>Tip:</strong> Camera access requires HTTPS (or <code>localhost</code>). Open this file via a local server or host it on GitHub Pages / Netlify / Vercel.</p>
-        </details>
-
+     
         <!-- Debug panel: shows exactly what happens during the sheet fetch -->
         <details class="setup-note" id="debugPanel" open>
           <summary>🔍 Debug log (sheet connection)</summary>
