@@ -345,6 +345,55 @@
       100% { top: 8%; opacity: 0.4; }
     }
 
+    /* =============================================================
+       FEEDBACK STATES — colour the reticle GREEN on match, RED on no-match.
+       These classes are applied to the .reticle element after each scan.
+       ============================================================= */
+    .reticle.feedback--success .reticle__corner {
+      border-color: #22c55e;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
+    }
+    .reticle.feedback--success .reticle__scanline {
+      background: linear-gradient(90deg, transparent, #22c55e, transparent);
+      box-shadow: 0 0 12px #22c55e;
+    }
+    .reticle.feedback--error .reticle__corner {
+      border-color: #ef4444;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+    }
+    .reticle.feedback--error .reticle__scanline {
+      background: linear-gradient(90deg, transparent, #ef4444, transparent);
+      box-shadow: 0 0 12px #ef4444;
+      animation: scan 0.6s ease-in-out 3;  /* faster blink on error */
+    }
+
+    /* Full-frame flash overlay — gives a strong, momentary colour cue
+       across the whole camera view. Sits inside .reader-wrap. */
+    .frame-flash {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 4;
+      border-radius: var(--radius-sm);
+      transition: opacity 0.15s ease-out;
+    }
+    .frame-flash.flash--success {
+      background: radial-gradient(circle at center, rgba(34, 197, 94, 0.35), rgba(34, 197, 94, 0.05));
+      box-shadow: inset 0 0 0 4px #22c55e, inset 0 0 40px rgba(34, 197, 94, 0.4);
+      animation: flashFade 1.2s ease-out forwards;
+    }
+    .frame-flash.flash--error {
+      background: radial-gradient(circle at center, rgba(239, 68, 68, 0.35), rgba(239, 68, 68, 0.05));
+      box-shadow: inset 0 0 0 4px #ef4444, inset 0 0 40px rgba(239, 68, 68, 0.4);
+      animation: flashFade 1.2s ease-out forwards;
+    }
+    @keyframes flashFade {
+      0%   { opacity: 0; }
+      15%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
     /* Status pill (top-right of camera frame) */
     .status-pill {
       position: absolute;
@@ -591,6 +640,9 @@
             <span class="status-pill__dot"></span>
             <span>Scanning</span>
           </div>
+
+          <!-- Frame flash overlay — animates green on match, red on no-match -->
+          <div class="frame-flash" id="frameFlash"></div>
         </div>
 
         <!-- =====================================================
@@ -658,6 +710,7 @@
     readerEmpty:     document.getElementById('readerEmpty'),
     reticle:         document.getElementById('reticle'),
     statusPill:      document.getElementById('statusPill'),
+    frameFlash:      document.getElementById('frameFlash'),
     resultArea:      document.getElementById('resultArea'),
     sheetDot:        document.getElementById('sheetDot'),
     sheetStatusText: document.getElementById('sheetStatusText'),
@@ -671,6 +724,33 @@
     } else {
       console.warn('resultArea element is missing from the DOM.');
     }
+  }
+
+  // Visual feedback on the camera frame: colour the reticle + flash overlay.
+  // kind: 'success' (green) or 'error' (red). Auto-clears after the animation.
+  function showFrameFeedback(kind) {
+    // 1) Tint the reticle corners + scanline
+    if (els.reticle) {
+      els.reticle.classList.remove('feedback--success', 'feedback--error');
+      // Force a reflow so re-adding the same class re-triggers any animation
+      void els.reticle.offsetWidth;
+      els.reticle.classList.add('feedback--' + kind);
+    }
+
+    // 2) Run the full-frame flash overlay
+    if (els.frameFlash) {
+      els.frameFlash.classList.remove('flash--success', 'flash--error');
+      void els.frameFlash.offsetWidth;
+      els.frameFlash.classList.add('flash--' + kind);
+    }
+
+    // 3) Clear feedback colours after the flash so the reticle returns to white
+    //    for the next scan attempt (only matters in continuous mode).
+    clearTimeout(showFrameFeedback._t);
+    showFrameFeedback._t = setTimeout(() => {
+      if (els.reticle) els.reticle.classList.remove('feedback--success', 'feedback--error');
+      if (els.frameFlash) els.frameFlash.classList.remove('flash--success', 'flash--error');
+    }, 1300);
   }
 
   // ===============================================================
@@ -851,7 +931,9 @@
       );
       isScanning = true;
       els.readerEmpty.style.display = 'none';
+      els.reticle.classList.remove('feedback--success', 'feedback--error');
       els.reticle.classList.add('active');
+      if (els.frameFlash) els.frameFlash.classList.remove('flash--success', 'flash--error');
       els.statusPill.classList.add('active');
       els.startBtn.disabled = true;
       els.stopBtn.disabled = false;
@@ -935,6 +1017,7 @@
   }
 
   function renderNotFound(scannedValue) {
+    showFrameFeedback('error');  // red flash + red reticle
     setResultHTML(`
       <div class="message message--error">
         <span>⛔</span>
@@ -944,6 +1027,8 @@
   }
 
   function renderMatch(scannedValue, row) {
+    showFrameFeedback('success');  // green flash + green reticle
+
     // Build a key/value table of every column for the matched row
     const rows = sheetColumns.map(col => `
       <tr>
