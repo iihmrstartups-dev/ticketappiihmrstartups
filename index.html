@@ -593,7 +593,12 @@
           </div>
         </div>
 
-     
+        <!-- =====================================================
+             RESULT AREA  ← THE MISSING DIV (this is the fix)
+             Result messages and the matched-record table render here.
+             ===================================================== -->
+        <div class="result-area" id="resultArea" aria-live="polite"></div>
+
         <!-- Debug panel: shows exactly what happens during the sheet fetch -->
         <details class="setup-note" id="debugPanel" open>
           <summary>🔍 Debug log (sheet connection)</summary>
@@ -657,6 +662,16 @@
     sheetDot:        document.getElementById('sheetDot'),
     sheetStatusText: document.getElementById('sheetStatusText'),
   };
+
+  // Defensive helper — never crash if resultArea (or any future
+  // optional container) is missing from the DOM.
+  function setResultHTML(html) {
+    if (els.resultArea) {
+      els.resultArea.innerHTML = html;
+    } else {
+      console.warn('resultArea element is missing from the DOM.');
+    }
+  }
 
   // ===============================================================
   // 1. LOAD GOOGLE SHEET DATA
@@ -740,17 +755,20 @@
 
   function showRetryableError() {
     setSheetStatus('err', 'Failed to load sheet');
-    els.resultArea.innerHTML = `
+    setResultHTML(`
       <div class="message message--error">
         <span>⚠️</span>
         <span style="flex:1;">Could not load Google Sheet. Check the published URL and your network.</span>
         <button id="retryLoad" class="btn-primary" style="height:32px;padding:4px 12px;font-size:12px;">Retry</button>
       </div>
-    `;
-    document.getElementById('retryLoad').addEventListener('click', () => {
-      els.resultArea.innerHTML = '';
-      loadSheetData();
-    });
+    `);
+    const retryBtn = document.getElementById('retryLoad');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', () => {
+        setResultHTML('');
+        loadSheetData();
+      });
+    }
   }
 
   // ===============================================================
@@ -903,26 +921,26 @@
   // 5. RESULT RENDERING
   // ===============================================================
   function clearResult() {
-    els.resultArea.innerHTML = '';
+    setResultHTML('');
   }
 
   function renderMessage(kind, text) {
     const icon = { info: 'ℹ️', success: '✅', error: '⛔', warn: '⚠️' }[kind] || '';
-    els.resultArea.innerHTML = `
+    setResultHTML(`
       <div class="message message--${kind}">
         <span>${icon}</span>
         <span>${text}</span>
       </div>
-    `;
+    `);
   }
 
   function renderNotFound(scannedValue) {
-    els.resultArea.innerHTML = `
+    setResultHTML(`
       <div class="message message--error">
         <span>⛔</span>
         <span>Record Not Found <span class="scanned-value">${escapeHtml(scannedValue)}</span></span>
       </div>
-    `;
+    `);
   }
 
   function renderMatch(scannedValue, row) {
@@ -934,7 +952,7 @@
       </tr>
     `).join('');
 
-    els.resultArea.innerHTML = `
+    setResultHTML(`
       <div class="message message--success">
         <span>✅</span>
         <span>Record Found <span class="scanned-value">${escapeHtml(scannedValue)}</span></span>
@@ -947,17 +965,17 @@
           <tbody>${rows}</tbody>
         </table>
       </div>
-    `;
+    `);
   }
 
   function showPermissionError(msg) {
     const text = msg || 'Camera permission was denied. Please allow camera access in your browser settings and try again.';
-    els.resultArea.innerHTML = `
+    setResultHTML(`
       <div class="message message--error">
         <span>📷</span>
         <span>${escapeHtml(text)}</span>
       </div>
-    `;
+    `);
   }
 
   function escapeHtml(s) {
