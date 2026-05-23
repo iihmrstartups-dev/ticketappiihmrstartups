@@ -255,15 +255,23 @@
     }
 
     #reader {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
+      z-index: 2;            /* sit above the empty-state overlay */
+      background: transparent;
     }
+
+    /* Library wrapper divs — force them to fill the box too */
+    #reader > div { width: 100% !important; height: 100% !important; }
 
     /* Hide the library's default UI we don't want */
     #reader__dashboard_section_csr,
     #reader__dashboard_section_swaplink,
     #reader__status_span,
-    #reader__header_message {
+    #reader__header_message,
+    #reader__scan_region img {
       display: none !important;
     }
 
@@ -272,12 +280,18 @@
       width: 100% !important;
       height: 100% !important;
       object-fit: cover;
+      display: block;
+    }
+    #reader__scan_region {
+      background: transparent !important;
+      min-height: 100% !important;
     }
 
     /* Empty state shown when camera is off */
     .reader-empty {
       position: absolute;
       inset: 0;
+      z-index: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -302,6 +316,7 @@
       aspect-ratio: 1 / 1;
       pointer-events: none;
       display: none;
+      z-index: 3;
     }
     .reticle.active { display: block; }
     .reticle__corner {
@@ -597,6 +612,12 @@
           </ol>
           <p style="margin-top:10px;"><strong>Tip:</strong> Camera access requires HTTPS (or <code>localhost</code>). Open this file via a local server or host it on GitHub Pages / Netlify / Vercel.</p>
         </details>
+
+        <!-- Debug panel: shows exactly what happens during the sheet fetch -->
+        <details class="setup-note" id="debugPanel" open>
+          <summary>🔍 Debug log (sheet connection)</summary>
+          <pre id="debugLog" style="margin:10px 0 0;padding:12px;background:#0f172a;color:#a7f3d0;border-radius:6px;font-family:var(--font-mono);font-size:11px;line-height:1.5;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow-y:auto;"></pre>
+        </details>
       </div>
     </section>
   </main>
@@ -612,6 +633,8 @@
   // 1) Paste the "Publish to web" CSV URL of your Google Sheet here.
   //    File → Share → Publish to web → CSV format → Publish → copy link.
   //    Leave the demo URL in place to try the app with sample data.
+  // NOTE: a valid published-CSV URL ALWAYS contains "2PACX-1v" with a hyphen.
+  // If your URL has "2PACX1v" (no hyphen) it was mistyped — re-copy it from Google.
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_Wovc_6HzdQGtVFwCeJAXlvPtfiyx0sZN3IRzch5rbXJdP1d2QnuFNDd1UMfqiCD_qzALmNW9Bxms/pub?output=csv";
 
   // 2) The header name of the column that holds serial numbers
@@ -657,8 +680,9 @@
   // ===============================================================
   // 1. LOAD GOOGLE SHEET DATA
   // ===============================================================
-  function loadSheetData() {
+  async function loadSheetData() {
     setSheetStatus('loading', 'Connecting to data source…');
+    debugLog('Fetching: ' + SHEET_CSV_URL);
 
     // If user hasn't replaced the demo URL, skip the fetch and use demo data
     if (SHEET_CSV_URL.includes('DEMO_REPLACE_ME')) {
@@ -666,25 +690,59 @@
       return;
     }
 
-    Papa.parse(SHEET_CSV_URL, {
-      download: true,
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (!results.data || results.data.length === 0) {
-          useDemoData('Sheet returned no rows. Using demo data.');
-          return;
-        }
-        sheetData = results.data;
-        sheetColumns = results.meta.fields || Object.keys(results.data[0]);
-        usingDemoData = false;
-        setSheetStatus('ok', `Loaded ${sheetData.length} records from sheet`);
-      },
-      error: (err) => {
-        console.error('Sheet load error:', err);
-        showRetryableError();
+    // We fetch manually (instead of letting Papa download) so we can see the real HTTP status
+    // and the first bytes of the response when something goes wrong.
+    try {
+      const res = await fetch(SHEET_CSV_URL, { redirect: 'follow' });
+      debugLog('HTTP status: ' + res.status + ' ' + res.statusText);
+      debugLog('Final URL after redirects: ' + res.url);
+      debugLog('Content-Type: ' + (res.headers.get('content-type') || '(none)'));
+
+      if (!res.ok) {
+        debugLog('Response not OK. Body preview follows.');
+        const body = await res.text();
+        debugLog('Body (first 400 chars): ' + body.slice(0, 400));
+        throw new Error('HTTP ' + res.status);
       }
-    });
+
+      const csvText = await res.text();
+      debugLog('Got ' + csvText.length + ' chars of CSV. First 200 chars:');
+      debugLog(csvText.slice(0, 200));
+
+      // If the response is HTML instead of CSV, Google is serving an error/login page.
+      // That typically means the sheet isn't actually published — only shared.
+      const trimmed = csvText.trimStart().slice(0, 20).toLowerCase();
+      if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
+        debugLog('⚠ Response is HTML, not CSV. The sheet is probably NOT published to web.');
+        throw new Error('Sheet is not published as CSV (got HTML back).');
+      }
+
+      const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+
+      if (results.errors && results.errors.length) {
+        debugLog('Papa parse warnings: ' + JSON.stringify(results.errors.slice(0, 3)));
+      }
+      if (!results.data || results.data.length === 0) {
+        useDemoData('Sheet returned no rows. Using demo data.');
+        return;
+      }
+
+      sheetData = results.data;
+      sheetColumns = results.meta.fields || Object.keys(results.data[0]);
+      usingDemoData = false;
+      setSheetStatus('ok', `Loaded ${sheetData.length} records from sheet`);
+      debugLog('✔ Columns detected: ' + sheetColumns.join(', '));
+
+      // Helpful: warn if the configured serial column doesn't exist in the sheet
+      if (!sheetColumns.includes(SERIAL_COLUMN)) {
+        debugLog('⚠ SERIAL_COLUMN "' + SERIAL_COLUMN + '" not found in sheet headers. ' +
+                 'Edit SERIAL_COLUMN in the script to match one of: ' + sheetColumns.join(', '));
+      }
+    } catch (err) {
+      console.error('Sheet load error:', err);
+      debugLog('✖ Fetch failed: ' + (err && err.message ? err.message : err));
+      showRetryableError();
+    }
   }
 
   function useDemoData(msg) {
@@ -928,6 +986,17 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // Append a line to the on-page debug panel + console
+  function debugLog(msg) {
+    const el = document.getElementById('debugLog');
+    if (el) {
+      const time = new Date().toLocaleTimeString();
+      el.textContent += `[${time}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+    console.log('[DEBUG]', msg);
   }
 
   // ===============================================================
