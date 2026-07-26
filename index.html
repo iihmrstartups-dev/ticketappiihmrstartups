@@ -639,6 +639,11 @@
   const MAX_SCANS_PER_PASS = 2;    // third scan is refused
   const ID_LENGTH          = 15;   // digits in a unique ID; set to 0 to disable the check
 
+  // After a SUCCESSFUL match (pass found in the sheet), the same pass is
+  // ignored for this long. A pass that is NOT found is never put on
+  // cooldown — it can be retried immediately, as many times as needed.
+  const SCAN_COOLDOWN_MS = 5000;
+
   const DEMO_DATA = [
     { "Unique ID": "568510556612345", "Name": "test",         "Contact": "8059538444", "Ticket Type": "Full Event: Rs.1100 (TEDxIIHMR U + Jokes & Jam with Goodies + Breakfast)" },
     { "Unique ID": "193975976298765", "Name": "shivam",       "Contact": "4565456666", "Ticket Type": "Full Event: Rs.1100 (TEDxIIHMR U + Jokes & Jam with Goodies + Breakfast)" },
@@ -658,6 +663,7 @@
   let isProcessing = false;         // blocks overlapping lookups
 
   const scanCounts = new Map();      // unique ID -> entries used so far
+  const lastMatchAt = new Map();     // unique ID -> timestamp of the last successful match (cooldown guard)
 
   // ===============================================================
   // DOM REFERENCES
@@ -996,8 +1002,10 @@
   async function onScanSuccess(decodedText) {
     const payload = String(decodedText).trim();
 
-    // No time-based guard. isProcessing only stops two decodes from the same
-    // burst running their lookups on top of one another.
+    // isProcessing only stops two decodes from the same burst running their
+    // lookups on top of one another. The 5-second cooldown for an already
+    // MATCHED pass lives in handleCode, keyed by pass ID — so it never
+    // affects unknown codes or a different attendee's pass.
     if (isProcessing) return;
 
     isProcessing = true;
@@ -1073,6 +1081,24 @@
   }
 
   // ===============================================================
+  // 5b. COOLDOWN GUARD
+  // Applies ONLY to passes that were successfully found in the sheet.
+  // After a match, the SAME pass is ignored for SCAN_COOLDOWN_MS so a
+  // code held in front of the camera doesn't burn its second entry
+  // instantly. Different passes are never blocked by each other, and
+  // not-found codes are never put on cooldown at all.
+  // ===============================================================
+  function isOnCooldown(id) {
+    const last = lastMatchAt.get(id);
+    if (!last) return false;
+    return (Date.now() - last) < SCAN_COOLDOWN_MS;
+  }
+
+  function markMatched(id) {
+    lastMatchAt.set(id, Date.now());
+  }
+
+  // ===============================================================
   // 6. RECORDING A SCAN
   // INTERIM: counts are held in this browser tab only. Replace the body
   // of this function with a fetch() to the Apps Script endpoint and
@@ -1102,9 +1128,19 @@
 
     const pass = resolvePass(payload);
     if (!pass) {
+      // Not found in the sheet — no cooldown ever applies here.
       renderNotFound(payload);
       return;
     }
+
+    // Cooldown guard: this pass matched recently, so ignore the re-scan
+    // quietly. The previous result stays on screen; nothing is counted.
+    if (isOnCooldown(pass.id)) {
+      const secondsAgo = ((Date.now() - lastMatchAt.get(pass.id)) / 1000).toFixed(1);
+      debugLog(`⏳ Cooldown — pass ${pass.id} matched ${secondsAgo}s ago; ignored (guard is ${SCAN_COOLDOWN_MS / 1000}s).`);
+      return;
+    }
+    markMatched(pass.id);
 
     const outcome = await recordScan(pass.id, pass.row, payload);
 
@@ -1309,6 +1345,7 @@
   if (reloadBtn) reloadBtn.addEventListener('click', () => {
     clearResult();
     scanCounts.clear();
+    lastMatchAt.clear();
     loadSheetData();
   });
 
