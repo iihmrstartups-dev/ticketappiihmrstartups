@@ -164,6 +164,17 @@
     }
     .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
     .btn-primary:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; }
+    .btn-ghost {
+      height: 26px;
+      padding: 0 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 999px;
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--accent-border);
+    }
+    .btn-ghost:hover { background: var(--accent-soft); }
     .btn-danger { background: #fff; color: var(--danger); border-color: var(--line); }
     .btn-danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -458,6 +469,22 @@
       line-height: 1.6;
     }
     .setup-note summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+    .loaded-wrap { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-x: auto; background: #fff; }
+    table.loaded { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.loaded th {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    table.loaded td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    table.loaded tr:last-child td { border-bottom: none; }
+    table.loaded td.mono { font-family: var(--font-mono); font-weight: 600; white-space: nowrap; }
+    table.loaded tr.unusable td { color: var(--ink-muted); font-style: italic; }
 
     .config-bar {
       display: flex;
@@ -496,6 +523,7 @@
         <div class="config-bar" id="sheetStatus" title="Data source status">
           <span class="config-bar__dot" id="sheetDot"></span>
           <span id="sheetStatusText">Connecting to data source…</span>
+          <button id="reloadBtn" class="btn-ghost" title="Re-read the sheet">↻ Reload</button>
         </div>
       </div>
 
@@ -551,12 +579,17 @@
         <div class="manual-entry">
           <div class="field">
             <label class="field__label" for="manualInput">Damaged pass? Type the unique ID</label>
-            <input type="text" id="manualInput" inputmode="numeric" placeholder="e.g. 1939759762" autocomplete="off" />
+            <input type="text" id="manualInput" inputmode="numeric" maxlength="24" placeholder="15-digit unique ID" autocomplete="off" />
           </div>
           <button id="manualBtn" class="btn-primary">Check ID</button>
         </div>
 
         <div class="result-area" id="resultArea" aria-live="polite"></div>
+
+        <details class="setup-note" id="loadedPanel">
+          <summary>Passes the scanner can see (<span id="loadedCount">0</span>)</summary>
+          <div id="loadedList" style="margin-top:12px;"></div>
+        </details>
 
         <details class="setup-note" id="debugPanel">
           <summary>🔍 Debug log</summary>
@@ -587,8 +620,8 @@
   // ===============================================================
   // Paste ONLY the long ID from the sheet URL:
   // https://docs.google.com/spreadsheets/d/<<< THIS PART >>>/edit#gid=0
-  const SHEET_ID   = "10A1n5cE4Cf1wa_Ap_Aur1zt3qxcS7jx6kJpDFJyMp0c";
-  const SHEET_NAME = "Sheet1";   // tab name, e.g. "Passes". Leave "" to use SHEET_GID.
+  const SHEET_ID   = "PASTE_SHEET_ID_HERE";
+  const SHEET_NAME = "";   // tab name, e.g. "Passes". Leave "" to use SHEET_GID.
   const SHEET_GID  = "0";  // tab gid from the URL (used only when SHEET_NAME is "")
 
   const SHEET_CSV_URL = SHEET_NAME
@@ -604,12 +637,12 @@
   };
 
   const MAX_SCANS_PER_PASS = 2;    // third scan is refused
-  const RESCAN_GUARD_MS    = 2000; // ignore the same code within this window
+  const ID_LENGTH          = 15;   // digits in a unique ID; set to 0 to disable the check
 
   const DEMO_DATA = [
-    { "Unique ID": "5685105566", "Name": "test",         "Contact": "",           "Ticket Type": "Full Event: Rs.1100 (TEDxIIHMR U + Jokes & Jam with Goodies + Breakfast)" },
-    { "Unique ID": "1939759762", "Name": "shivam",       "Contact": "4565456666", "Ticket Type": "Full Event: Rs.1100 (TEDxIIHMR U + Jokes & Jam with Goodies + Breakfast)" },
-    { "Unique ID": "7712340098", "Name": "Shivam Verma", "Contact": "8059538444", "Ticket Type": "Only TEDxIIHMR U: Rs. 999 (TEDxIIHMR U with Goodies + Breakfast)" }
+    { "Unique ID": "568510556612345", "Name": "test",         "Contact": "8059538444", "Ticket Type": "Full Event: Rs.1100 (TEDxIIHMR U + Jokes & Jam with Goodies + Breakfast)" },
+    { "Unique ID": "193975976298765", "Name": "shivam",       "Contact": "4565456666", "Ticket Type": "Full Event: Rs.1100 (TEDxIIHMR U + Jokes & Jam with Goodies + Breakfast)" },
+    { "Unique ID": "771234009845612", "Name": "Shivam Verma", "Contact": "8059538444", "Ticket Type": "Only TEDxIIHMR U: Rs. 999 (TEDxIIHMR U with Goodies + Breakfast)" }
   ];
 
   // ===============================================================
@@ -617,12 +650,13 @@
   // ===============================================================
   let sheetColumns = [];
   let cols = { id: null, name: null, contact: null, ticket: null };
+  let allRows = [];                 // every parsed row, usable or not
   let idIndex = new Map();          // normalised unique ID -> row object
+  let digitIndex = new Map();       // digits-only unique ID -> row object
   let html5QrCode = null;
   let isScanning = false;
   let isProcessing = false;         // blocks overlapping lookups
 
-  const recentSightings = new Map(); // decoded string -> last seen timestamp
   const scanCounts = new Map();      // unique ID -> entries used so far
 
   // ===============================================================
@@ -763,7 +797,7 @@
       resolveColumns(sheetColumns);
       buildIndex(results.data);
 
-      setSheetStatus('ok', `${idIndex.size} passes loaded`);
+      setSheetStatus('ok', `${idIndex.size} passes from ${allRows.length} rows`);
       debugLog('✔ Columns: ' + sheetColumns.join(' | '));
       debugLog('✔ Using — id: "' + cols.id + '", name: "' + cols.name +
                '", contact: "' + cols.contact + '", ticket: "' + cols.ticket + '"');
@@ -790,14 +824,45 @@
   }
 
   function buildIndex(rows) {
+    allRows = rows;
     idIndex = new Map();
+    digitIndex = new Map();
     let skipped = 0;
-    rows.forEach(row => {
-      const id = normalize(row[cols.id]);
-      if (!id) { skipped++; return; }   // rows not yet approved have no unique ID
-      idIndex.set(id, row);
+    let duplicates = 0;
+    let malformed = 0;
+
+    rows.forEach((row, i) => {
+      const raw = String(row[cols.id] == null ? '' : row[cols.id]).trim();
+      const key = normalize(raw);
+      const digits = digitsOnly(raw);
+
+      if (!key) {
+        skipped++;
+        debugLog(`  sheet row ${i + 2}: no unique ID — skipped`);
+        return;
+      }
+      if (idIndex.has(key)) {
+        duplicates++;
+        debugLog(`  sheet row ${i + 2}: duplicate ID "${raw}" — replaces the earlier row`);
+      }
+      if (/e\+|\./i.test(raw)) {
+        malformed++;
+        debugLog(`  ⚠ sheet row ${i + 2}: ID reads "${raw}" — the cell is a NUMBER, not text. ` +
+                 `Digits have been lost and this pass can never match. Format the column as plain text.`);
+      } else if (ID_LENGTH && digits.length !== ID_LENGTH) {
+        malformed++;
+        debugLog(`  ⚠ sheet row ${i + 2}: ID "${raw}" is ${digits.length} digits, expected ${ID_LENGTH}`);
+      }
+      idIndex.set(key, row);
+      if (digits) digitIndex.set(digits, row);
     });
-    if (skipped) debugLog('ℹ Skipped ' + skipped + ' row(s) with no unique ID (not yet approved).');
+
+    debugLog(`Rows parsed: ${rows.length} · usable: ${idIndex.size} · no ID: ${skipped} · duplicates: ${duplicates} · malformed: ${malformed}`);
+    if (malformed) {
+      setSheetStatus('err', `${malformed} ID(s) look wrong — open the debug log`);
+    }
+    debugLog('IDs in memory: ' + [...digitIndex.keys()].join(', '));
+    renderLoadedPanel();
   }
 
   function useDemoData(msg) {
@@ -924,29 +989,15 @@
   }
 
   // ===============================================================
-  // 4. SCAN CALLBACKS + THE 2-SECOND GUARD
+  // 4. SCAN CALLBACKS
   // ===============================================================
   function onScanFailure() { /* fires constantly on empty frames — stay silent */ }
-
-  function isWithinGuard(decodedText) {
-    const now = Date.now();
-    const last = recentSightings.get(decodedText);
-
-    // Prune anything long past the window so the map cannot grow unbounded
-    for (const [key, seenAt] of recentSightings) {
-      if (now - seenAt > RESCAN_GUARD_MS * 5) recentSightings.delete(key);
-    }
-
-    // Refresh on every sighting: a pass held in front of the lens keeps
-    // resetting the window, so it fires once, not every two seconds.
-    recentSightings.set(decodedText, now);
-    return last != null && (now - last) < RESCAN_GUARD_MS;
-  }
 
   async function onScanSuccess(decodedText) {
     const payload = String(decodedText).trim();
 
-    if (isWithinGuard(payload)) return;
+    // No time-based guard. isProcessing only stops two decodes from the same
+    // burst running their lookups on top of one another.
     if (isProcessing) return;
 
     isProcessing = true;
@@ -968,17 +1019,56 @@
     return (v == null ? '' : String(v)).trim().toLowerCase();
   }
 
+  // Strips commas, spaces, apostrophes and stray punctuation, so a sheet that
+  // exports "5,685,105,566" still matches a QR carrying "5685105566".
+  function digitsOnly(v) {
+    return (v == null ? '' : String(v)).replace(/\D/g, '');
+  }
+
+  function passKey(row) {
+    const raw = String(row[cols.id] == null ? '' : row[cols.id]).trim();
+    return digitsOnly(raw) || normalize(raw);
+  }
+
   function resolvePass(payload) {
     if (idIndex.size === 0) return null;
 
-    const direct = idIndex.get(normalize(payload));
-    if (direct) return { id: normalize(payload), row: direct };
-
-    const tokens = payload.match(/\d{6,}/g) || [];
-    for (const token of tokens) {
-      const hit = idIndex.get(normalize(token));
-      if (hit) return { id: normalize(token), row: hit };
+    const whole = normalize(payload);
+    if (idIndex.has(whole)) {
+      debugLog('✔ Matched on the whole decoded string.');
+      const row = idIndex.get(whole);
+      return { id: passKey(row), row };
     }
+
+    const wholeDigits = digitsOnly(payload);
+    if (wholeDigits && digitIndex.has(wholeDigits)) {
+      debugLog('✔ Matched after stripping non-digit characters.');
+      const row = digitIndex.get(wholeDigits);
+      return { id: passKey(row), row };
+    }
+
+    let tokens = payload.match(/\d{4,}/g) || [];
+    if (ID_LENGTH) {
+      // A payload carrying both the ID and a mobile number holds two runs of
+      // digits. Try the ones that are the right length for an ID first.
+      tokens = [
+        ...tokens.filter(t => t.length === ID_LENGTH),
+        ...tokens.filter(t => t.length !== ID_LENGTH)
+      ];
+    }
+    for (const token of tokens) {
+      if (digitIndex.has(token)) {
+        debugLog('✔ Matched a number found inside the payload: ' + token);
+        const row = digitIndex.get(token);
+        return { id: passKey(row), row };
+      }
+    }
+
+    debugLog('✖ No match.');
+    debugLog('   decoded : "' + payload + '"');
+    debugLog('   digits  : "' + wholeDigits + '"');
+    debugLog('   numbers : ' + (tokens.length ? tokens.join(', ') : '(none found)'));
+    debugLog('   loaded  : ' + [...digitIndex.keys()].join(', '));
     return null;
   }
 
@@ -1007,6 +1097,8 @@
       playFeedbackSound('error');
       return;
     }
+
+    debugLog('── Scanned: "' + payload + '"');
 
     const pass = resolvePass(payload);
     if (!pass) {
@@ -1147,6 +1239,45 @@
   });
 
   // ===============================================================
+  // 8b. WHAT THE SCANNER ACTUALLY HOLDS
+  // ===============================================================
+  function renderLoadedPanel() {
+    const countEl = document.getElementById('loadedCount');
+    const listEl  = document.getElementById('loadedList');
+    if (!listEl) return;
+
+    if (countEl) countEl.textContent = String(idIndex.size);
+
+    if (!allRows.length) {
+      listEl.innerHTML = '<em>Nothing loaded yet.</em>';
+      return;
+    }
+
+    const rows = allRows.map((row, i) => {
+      const raw  = String(row[cols.id] == null ? '' : row[cols.id]).trim();
+      const name = cols.name ? String(row[cols.name] == null ? '' : row[cols.name]).trim() : '';
+      const usable = !!normalize(raw);
+      return `
+        <tr class="${usable ? '' : 'unusable'}">
+          <td>${i + 2}</td>
+          <td class="mono">${usable ? escapeHtml(raw) : 'no ID'}</td>
+          <td>${escapeHtml(name || '—')}</td>
+          <td>${usable ? 'scannable' : 'ignored'}</td>
+        </tr>`;
+    }).join('');
+
+    listEl.innerHTML = `
+      <div class="loaded-wrap">
+        <table class="loaded">
+          <thead><tr><th>Sheet row</th><th>Unique ID</th><th>Name</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;">Reading tab <strong>${escapeHtml(SHEET_NAME || 'gid ' + SHEET_GID)}</strong>. If a row is missing here, the scanner is not reading the tab you think it is.</div>
+    `;
+  }
+
+  // ===============================================================
   // 9. HELPERS
   // ===============================================================
   function escapeHtml(s) {
@@ -1173,6 +1304,13 @@
   // ===============================================================
   els.startBtn.addEventListener('click', startScanning);
   els.stopBtn.addEventListener('click', stopScanning);
+
+  const reloadBtn = document.getElementById('reloadBtn');
+  if (reloadBtn) reloadBtn.addEventListener('click', () => {
+    clearResult();
+    scanCounts.clear();
+    loadSheetData();
+  });
 
   els.manualBtn.addEventListener('click', async () => {
     const value = els.manualInput.value.trim();
